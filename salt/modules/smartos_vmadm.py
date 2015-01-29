@@ -83,21 +83,25 @@ def _gen_zone_json(**kwargs):
         'image_uuid', 'alias', 'hostname',
         'max_physical_memory', 'quota', 'nic_tag',
         'ip', 'netmask', 'gateway')
+    array_args = ('resolvers',)
     nics_args = ('nic_tag', 'ip', 'netmask', 'gateway')
     # Lazy check of arguments
     if not all(key in kwargs for key in check_args):
         raise CommandExecutionError('Missing arguments for JSON generation')
     # This one is mandatory for OS virt
     ret.update(brand='joyent')
-    # Populate JSON without NIC information
-    ret.update((key, kwargs[key])
-        for key in check_args
-        if key in kwargs and key not in nics_args)
+    # Populate JSON without NIC information or array args
+    ret.update((key, value)
+        for key, value in kwargs.items()
+        if key not in nics_args + array_args)
     # NICs are defined in a subdict
     nics.update((key, kwargs[key])
         for key in nics_args
         if key in kwargs)
     ret.update(nics=[nics])
+    # Populate whitespace delimited array args
+    ret.update((key, (kwargs.get(key) or '').split())
+        for key in array_args)
 
     return json.dumps(ret)
 
@@ -111,6 +115,63 @@ def init(**kwargs):
     .. code-block:: bash
 
         salt '*' virt.init image_uuid='...' alias='...' [...]
+
+
+    image_uuid
+        This should be a UUID identifying the image for the VM if a VM was
+        created from an image.
+
+        NOTE: when this is passed for KVM VMs, it specifies the *zone root*
+        dataset which is not visible from within the VM. The user-visible
+        dataset will be the one specified through the disks.*.image_uuid.
+        Normally you do *not* want to set this for KVM.
+
+    alias
+        An alias for a VM which is for display/lookup purposes only. Not
+        required to be unique.
+
+    hostname
+        For KVM VMs, this value will be handed out via DHCP as the hostname for
+        the VM. For OS VMs, this value will get set in several files at
+        creation time, but changing it later will do nothing.
+
+    max_physical_memory
+        The maximum amount of memory on the host that the VM is allowed to use.
+        For KVM VMs, this value cannot be lower than 'ram' and should be
+        ram + 1024.
+
+    quota
+        This sets a quota on the zone filesystem. For OS VMs, this value is the
+        space actually visible/usable in the guest. For KVM VMs, this value is
+        the quota for the Zone containing the VM, which is not directly
+        available to users.
+
+        Set quota to 0 to disable (ie. for no quota).
+
+    resolvers (optional)
+        For OS VMs, this value sets the resolvers which get put into
+        /etc/resolv.conf at VM creation. If maintain_resolvers is set to
+        true, updating this property will also update the resolvers in
+        /etc/resolv.conf. For KVM VMs these will get passed as the resolvers
+        with DHCP responses.
+
+        example::
+            resolvers='8.8.8.8 4.4.4.4'
+
+    uuid (optional)
+        This is the unique identifer for the VM. If one is not passed in with
+        the create request, a new UUID will be generated. It cannot be changed
+        after a VM is created.
+
+    Network Arguments
+        nic_tag
+        ip
+        netmask
+        gateway
+
+    Additional information available at::
+        https://github.com/joyent/smartos-live/blob/master/src/vm/man/vmadm.1m.md#properties
+
     '''
     ret = {}
     vmadm = _check_vmadm()
